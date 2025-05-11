@@ -1,43 +1,43 @@
-# Dockerfile
-
 FROM php:8.1-apache
 
-# 1. อนุญาตให้ composer รันเป็น root ได้
+# อนุญาตให้ composer รันเป็น root ได้
 ENV COMPOSER_ALLOW_SUPERUSER=1
-# ตั้งค่าโฟลเดอร์สำหรับ Composer home
 ENV COMPOSER_HOME=/tmp
 
-# 2. ติดตั้งส่วนเสริมที่ต้องใช้
+# ติดตั้งส่วนเสริมที่ต้องใช้
 RUN apt-get update && apt-get install -y \
-      libzip-dev \
-      zip \
-      unzip \
-      git \
+      libzip-dev zip unzip git \
     && docker-php-ext-install pdo_mysql zip
 
-# 3. ติดตั้ง Composer
+# ติดตั้ง Composer
 RUN curl -sS https://getcomposer.org/installer | php \
     && mv composer.phar /usr/local/bin/composer
 
 WORKDIR /var/www/html
 
-# 4. Copy เฉพาะไฟล์ composer.json และ lock ไว้ก่อน เพื่อ leverage cache
+# 1) คัดลอกเฉพาะ composer.json/lock ก่อน
 COPY composer.json composer.lock ./
 
-# 5. ติดตั้ง dependencies พร้อม disable plugins ที่โดน root block ไว้
+# 2) ติดตั้ง dependencies แต่ข้ามการรันสคริปต์
 RUN composer install \
     --no-dev \
     --optimize-autoloader \
+    --no-scripts \
     --no-interaction \
     --no-progress
 
-# 6. Copy โค้ดที่เหลือทั้งหมด
+# 3) คัดลอกโค้ดทั้งหมด (รวม .env.example)
 COPY . .
 
-# 7. สร้าง key, cache config, cache routes ให้พร้อมรัน
-RUN php artisan key:generate --ansi \
-    && php artisan config:cache \
+# 4) เตรียม .env กับ APP_KEY
+RUN cp .env.example .env \
+    && php artisan key:generate --ansi
+
+# 5) รันสคริปต์ package discover ทีหลัง เมื่อ .env พร้อมแล้ว
+RUN composer run-script post-autoload-dump
+
+# 6) Cache config/routes (optional)
+RUN php artisan config:cache \
     && php artisan route:cache
 
-# 8. เปิดพอร์ต 80
 EXPOSE 80
