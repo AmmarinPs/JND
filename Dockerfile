@@ -1,13 +1,19 @@
 FROM php:8.1-apache
 
-# อนุญาตให้ composer รันเป็น root ได้
+# (บรรทัดก่อนหน้าเหมือนเดิม...)
 ENV COMPOSER_ALLOW_SUPERUSER=1
 ENV COMPOSER_HOME=/tmp
 
-# ติดตั้งส่วนเสริมที่ต้องใช้
 RUN apt-get update && apt-get install -y \
       libzip-dev zip unzip git \
     && docker-php-ext-install pdo_mysql zip
+
+# เปิด mod_rewrite เพื่อให้ .htaccess ของ Laravel ทำงาน
+RUN a2enmod rewrite
+
+# เปลี่ยน DocumentRoot เป็น public/
+RUN sed -ri 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/*.conf \
+ && sed -ri 's!/var/www/html!/var/www/html/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 
 # ติดตั้ง Composer
 RUN curl -sS https://getcomposer.org/installer | php \
@@ -15,29 +21,15 @@ RUN curl -sS https://getcomposer.org/installer | php \
 
 WORKDIR /var/www/html
 
-# 1) คัดลอกเฉพาะ composer.json/lock ก่อน
 COPY composer.json composer.lock ./
+RUN composer install --no-dev --optimize-autoloader --no-scripts --no-interaction --no-progress
 
-# 2) ติดตั้ง dependencies แต่ข้ามการรันสคริปต์
-RUN composer install \
-    --no-dev \
-    --optimize-autoloader \
-    --no-scripts \
-    --no-interaction \
-    --no-progress
-
-# 3) คัดลอกโค้ดทั้งหมด (รวม .env.example)
 COPY . .
 
-# 4) เตรียม .env กับ APP_KEY
 RUN cp .env.example .env \
-    && php artisan key:generate --ansi
-
-# 5) รันสคริปต์ package discover ทีหลัง เมื่อ .env พร้อมแล้ว
-RUN composer run-script post-autoload-dump
-
-# 6) Cache config/routes (optional)
-RUN php artisan config:cache \
+    && php artisan key:generate --ansi \
+    && composer run-script post-autoload-dump \
+    && php artisan config:cache \
     && php artisan route:cache
 
 EXPOSE 80
