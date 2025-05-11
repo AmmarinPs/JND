@@ -1,7 +1,13 @@
-# ใช้ official PHP image กับ Apache
+# Dockerfile
+
 FROM php:8.1-apache
 
-# ติดตั้งส่วนเสริมที่จำเป็น (pdo_mysql, zip, unzip, git)
+# 1. อนุญาตให้ composer รันเป็น root ได้
+ENV COMPOSER_ALLOW_SUPERUSER=1
+# ตั้งค่าโฟลเดอร์สำหรับ Composer home
+ENV COMPOSER_HOME=/tmp
+
+# 2. ติดตั้งส่วนเสริมที่ต้องใช้
 RUN apt-get update && apt-get install -y \
       libzip-dev \
       zip \
@@ -9,27 +15,29 @@ RUN apt-get update && apt-get install -y \
       git \
     && docker-php-ext-install pdo_mysql zip
 
-# ติดตั้ง Composer
+# 3. ติดตั้ง Composer
 RUN curl -sS https://getcomposer.org/installer | php \
     && mv composer.phar /usr/local/bin/composer
 
-# ตั้ง working directory
 WORKDIR /var/www/html
 
-# คัดลอกไฟล์ composer ก่อนเพื่อ leverage Docker cache
+# 4. Copy เฉพาะไฟล์ composer.json และ lock ไว้ก่อน เพื่อ leverage cache
 COPY composer.json composer.lock ./
 
-# ติดตั้ง dependencies
-RUN composer install --no-dev --optimize-autoloader
+# 5. ติดตั้ง dependencies พร้อม disable plugins ที่โดน root block ไว้
+RUN composer install \
+    --no-dev \
+    --optimize-autoloader \
+    --no-interaction \
+    --no-progress
 
-# คัดลอกโค้ดที่เหลือ
+# 6. Copy โค้ดที่เหลือทั้งหมด
 COPY . .
 
-# สร้าง key และ cache config เข้า production mode
-RUN php artisan key:generate \
+# 7. สร้าง key, cache config, cache routes ให้พร้อมรัน
+RUN php artisan key:generate --ansi \
     && php artisan config:cache \
     && php artisan route:cache
 
-# ให้ Apache ชี้ไปที่ public
-# (ใน php:apache image, DocumentRoot คือ /var/www/html ของเรา)
+# 8. เปิดพอร์ต 80
 EXPOSE 80
